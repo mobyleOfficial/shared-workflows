@@ -1,0 +1,16 @@
+name: Check Co-Authors
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  check-coauthors:
+    uses: mobyleOfficial/shared-workflows/.github/workflows/check-coauthors.yml@main
+    permissions:
+      contents: read
+      pull-requests: write
