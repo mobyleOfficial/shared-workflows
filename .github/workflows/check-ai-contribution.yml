@@ -1,4 +1,4 @@
-name: Check Co-Authors
+name: Check AI Contribution
 
 on:
   workflow_call:
@@ -8,8 +8,8 @@ permissions:
   pull-requests: write
 
 jobs:
-  check-coauthors:
-    name: Check for co-authored commits
+  check-ai-contribution:
+    name: Check for AI contribution attribution
     runs-on: ubuntu-latest
 
     steps:

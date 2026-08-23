@@ -4,15 +4,15 @@ Reusable GitHub Actions workflows for the [mobyleOfficial](https://github.com/mo
 
 ## Available workflows
 
-### Check Co-Authors
+### Check AI Contribution
 
 Fails pull requests that include AI ownership attribution in commit messages or the PR body (for example `Co-Authored-By`, `Generated with …`, `Made with …`).
 
 **Caller (copy into each repo):**
 
 ```yaml
-# .github/workflows/check-coauthors.yml
-name: Check Co-Authors
+# .github/workflows/check-ai-contribution.yml
+name: Check AI Contribution
 
 on:
   pull_request_target:
@@ -23,8 +23,8 @@ permissions:
   pull-requests: write
 
 jobs:
-  check-coauthors:
-    uses: mobyleOfficial/shared-workflows/.github/workflows/check-coauthors.yml@main
+  check-ai-contribution:
+    uses: mobyleOfficial/shared-workflows/.github/workflows/check-ai-contribution.yml@main
     permissions:
       contents: read
       pull-requests: write
