@@ -150,3 +150,26 @@ Map GitHub secrets into those env vars on the job. Delete the written files in a
     ANDROID_KEY_PASSWORD_PROD: ${{ secrets.ANDROID_KEY_PASSWORD_PROD }}
 ```
 
+### iOS CI
+
+Opinionated native iOS CI reusable workflow: optional SwiftLint (ubuntu container), then macOS Xcode + Ruby/Fastlane tests with xcresult artifact/report.
+
+**Research notes:** [`docs/research/ios-ci.md`](docs/research/ios-ci.md)
+
+**Caller example:**
+
+```yaml
+jobs:
+  ios-ci:
+    uses: mobyleOfficial/shared-workflows/.github/workflows/ios-ci.yml@main
+    with:
+      macos-version: '14'
+      xcode-version: '16.2'
+      run-swiftlint: true
+      run-tests: true
+      test-command: bundle exec fastlane test_project open:false
+    permissions:
+      contents: read
+      checks: write
+```
+
