@@ -1,0 +1,239 @@
+name: Flutter CI
+
+on:
+  workflow_call:
+    inputs:
+      run-linter:
+        required: false
+        type: boolean
+        default: true
+      run-ios-tests:
+        required: false
+        type: boolean
+        default: true
+      run-android-tests:
+        required: false
+        type: boolean
+        default: true
+      flutter-version:
+        required: true
+        type: string
+      ruby-version:
+        required: true
+        type: string
+      macos-version:
+        required: false
+        type: string
+        default: '14'
+      xcode-version:
+        required: false
+        type: string
+        default: ''
+      android-java-version:
+        required: false
+        type: string
+        default: '17'
+      android-java-distribution:
+        required: false
+        type: string
+        default: temurin
+      ios-test-device:
+        required: false
+        type: string
+        default: ''
+      test-coverage-minimum:
+        required: false
+        type: string
+        default: ''
+      run-codegen:
+        required: false
+        type: boolean
+        default: false
+      setup-ci-env:
+        required: false
+        type: boolean
+        default: false
+      ios-test-command:
+        required: false
+        type: string
+        default: 'bundle exec fastlane test'
+      android-test-command:
+        required: false
+        type: string
+        default: 'bundle exec fastlane test'
+      ios-build-command:
+        required: false
+        type: string
+        default: 'bundle exec fastlane ios build flavor:dev simulator:true'
+      android-build-command:
+        required: false
+        type: string
+        default: 'bundle exec fastlane android build flavor:dev'
+      working-directory:
+        required: false
+        type: string
+        default: '.'
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  lint:
+    name: Lint
+    if: inputs.run-linter
+    runs-on: ubuntu-latest
+    env:
+      FASTLANE_SKIP_UPDATE_CHECK: 1
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mobyleOfficial/shared-workflows/.github/actions/setup-flutter-environment@main
+        with:
+          flutter-version: ${{ inputs.flutter-version }}
+          ruby-version: ${{ inputs.ruby-version }}
+          run-codegen: ${{ inputs.run-codegen }}
+          setup-ci-env: 'false'
+
+      - uses: zgosalvez/github-actions-analyze-dart@v4
+        with:
+          fail-on-warnings: false
+          fail-on-infos: false
+
+  test-ios:
+    name: iOS - Test & Build
+    if: inputs.run-ios-tests
+    runs-on: macos-${{ inputs.macos-version }}
+    env:
+      FASTLANE_SKIP_UPDATE_CHECK: 1
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mobyleOfficial/shared-workflows/.github/actions/setup-flutter-environment@main
+        with:
+          flutter-version: ${{ inputs.flutter-version }}
+          ruby-version: ${{ inputs.ruby-version }}
+          xcode-version: ${{ inputs.xcode-version }}
+          run-codegen: ${{ inputs.run-codegen }}
+          setup-ci-env: ${{ inputs.setup-ci-env }}
+
+      - name: Run tests
+        run: |
+          if [ -n "${{ inputs.ios-test-device }}" ]; then
+            ${{ inputs.ios-test-command }} device:'${{ inputs.ios-test-device }}'
+          else
+            ${{ inputs.ios-test-command }}
+          fi
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-ios-coverage
+          path: testResults/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Build iOS simulator
+        run: ${{ inputs.ios-build-command }}
+
+      - name: Upload iOS build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-ios-build
+          path: build/ios/iphonesimulator/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  test-android:
+    name: Android - Test & Build
+    if: inputs.run-android-tests
+    runs-on: ubuntu-latest
+    env:
+      FASTLANE_SKIP_UPDATE_CHECK: 1
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mobyleOfficial/shared-workflows/.github/actions/setup-flutter-environment@main
+        with:
+          flutter-version: ${{ inputs.flutter-version }}
+          ruby-version: ${{ inputs.ruby-version }}
+          setup-java: 'true'
+          java-version: ${{ inputs.android-java-version }}
+          java-distribution: ${{ inputs.android-java-distribution }}
+          run-codegen: ${{ inputs.run-codegen }}
+          setup-ci-env: ${{ inputs.setup-ci-env }}
+
+      - name: Run tests
+        run: ${{ inputs.android-test-command }}
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-android-coverage
+          path: testResults/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Build Android
+        run: ${{ inputs.android-build-command }}
+
+      - name: Upload Android build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-android-apk
+          path: build/app/outputs/apk/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  report:
+    name: Report coverage
+    needs: [test-ios, test-android]
+    if: always() && inputs.test-coverage-minimum != '' && (inputs.run-ios-tests || inputs.run-android-tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download iOS coverage
+        if: inputs.run-ios-tests
+        uses: actions/download-artifact@v4
+        with:
+          name: flutter-ios-coverage
+          path: coverage-ios/
+        continue-on-error: true
+
+      - name: Download Android coverage
+        if: inputs.run-android-tests
+        uses: actions/download-artifact@v4
+        with:
+          name: flutter-android-coverage
+          path: coverage-android/
+        continue-on-error: true
+
+      - name: Merge coverage
+        run: |
+          mkdir -p testResults
+          if [ -f coverage-ios/lcov.info ]; then cp coverage-ios/lcov.info testResults/lcov.info; fi
+          if [ ! -f testResults/lcov.info ] && [ -f coverage-android/lcov.info ]; then cp coverage-android/lcov.info testResults/lcov.info; fi
+          if [ ! -f testResults/lcov.info ]; then echo "WARNING: no lcov.info"; exit 0; fi
+
+      - name: Install lcov
+        run: sudo apt-get update && sudo apt-get install -y lcov
+
+      - uses: zgosalvez/github-actions-report-lcov@v4
+        with:
+          coverage-files: testResults/lcov.info
+          minimum-coverage: ${{ inputs.test-coverage-minimum }}

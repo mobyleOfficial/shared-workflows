@@ -1,0 +1,236 @@
+name: Android Publish
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: build-and-publish (sign+build+upload) or distribute-artifact (upload pre-built binary)
+        required: false
+        type: string
+        default: build-and-publish
+      environment:
+        description: Deployment environment (dev, staging, prod)
+        required: false
+        type: string
+        default: dev
+      target:
+        description: play_store (upload via distribute-command) or artifact-only (re-upload/download only)
+        required: false
+        type: string
+        default: play_store
+      flavor:
+        description: Build flavor passed to build-command (optional; empty uses determine-flavor)
+        required: false
+        type: string
+        default: ''
+      java-version:
+        required: false
+        type: string
+        default: '17'
+      java-distribution:
+        required: false
+        type: string
+        default: temurin
+      ruby-version:
+        description: Ruby for Fastlane (build-and-publish mode)
+        required: false
+        type: string
+        default: '3.3'
+      setup-signing:
+        description: Run setup-android-signing before build (build-and-publish)
+        required: false
+        type: boolean
+        default: true
+      build-command:
+        description: Shell command to produce signed AAB/APK (build-and-publish mode)
+        required: false
+        type: string
+        default: 'bundle exec fastlane android build'
+      distribute-command:
+        description: Shell command to upload to Play (play_store target). ARTIFACT_PATH is exported when distributing.
+        required: false
+        type: string
+        default: 'bundle exec fastlane android deploy_play dry_run:false'
+      artifact-name:
+        description: GitHub Actions artifact to download (distribute-artifact mode)
+        required: false
+        type: string
+        default: ''
+      artifact-path:
+        description: Explicit path to AAB/APK after download or build (optional if artifact-glob finds one)
+        required: false
+        type: string
+        default: ''
+      artifact-glob:
+        description: Glob to locate binary under artifact download directory
+        required: false
+        type: string
+        default: '**/*.{aab,apk}'
+      working-directory:
+        required: false
+        type: string
+        default: '.'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Android publish (${{ inputs.mode }} → ${{ inputs.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    env:
+      FASTLANE_SKIP_UPDATE_CHECK: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate mode
+        run: |
+          case "${{ inputs.mode }}" in
+            build-and-publish|distribute-artifact) ;;
+            *) echo "ERROR: Invalid mode '${{ inputs.mode }}'"; exit 1 ;;
+          esac
+          case "${{ inputs.target }}" in
+            play_store|artifact-only) ;;
+            *) echo "ERROR: Invalid target '${{ inputs.target }}'"; exit 1 ;;
+          esac
+          if [ "${{ inputs.mode }}" = "distribute-artifact" ] && [ -z "${{ inputs.artifact-name }}" ] && [ -z "${{ inputs.artifact-path }}" ]; then
+            echo "ERROR: distribute-artifact requires artifact-name or artifact-path"
+            exit 1
+          fi
+          if [ "${{ inputs.mode }}" = "build-and-publish" ] && [ -z "${{ inputs.build-command }}" ]; then
+            echo "ERROR: build-and-publish requires build-command"
+            exit 1
+          fi
+
+      - name: Download pre-built artifact
+        if: inputs.mode == 'distribute-artifact' && inputs.artifact-name != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: downloaded-artifact
+
+      - name: Resolve artifact path
+        id: artifact
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.artifact-path }}" ] && [ -f "${{ inputs.artifact-path }}" ]; then
+            echo "path=${{ inputs.artifact-path }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -d downloaded-artifact ]; then
+            found=$(find downloaded-artifact -type f \( -name '*.aab' -o -name '*.apk' \) | head -n 1 || true)
+            if [ -n "$found" ]; then
+              echo "path=$found" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          if [ "${{ inputs.mode }}" = "distribute-artifact" ]; then
+            echo "ERROR: Could not resolve AAB/APK from artifact-name or artifact-path"
+            exit 1
+          fi
+          echo "path=" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK
+        if: inputs.mode == 'build-and-publish'
+        uses: actions/setup-java@v4
+        with:
+          distribution: ${{ inputs.java-distribution }}
+          java-version: ${{ inputs.java-version }}
+          cache: gradle
+
+      - name: Setup Gradle
+        if: inputs.mode == 'build-and-publish'
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Setup Ruby
+        if: inputs.mode == 'build-and-publish'
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ inputs.ruby-version }}
+          bundler-cache: true
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Determine flavor
+        if: inputs.mode == 'build-and-publish' && inputs.flavor == ''
+        id: flavor
+        uses: mobyleOfficial/shared-workflows/.github/actions/determine-flavor@main
+        with:
+          environment: ${{ inputs.environment }}
+
+      - name: Setup Android signing
+        if: inputs.mode == 'build-and-publish' && inputs.setup-signing
+        uses: mobyleOfficial/shared-workflows/.github/actions/setup-android-signing@main
+        with:
+          environment: ${{ inputs.environment }}
+
+      - name: Build release binary
+        if: inputs.mode == 'build-and-publish'
+        run: |
+          FLAVOR="${{ inputs.flavor != '' && inputs.flavor || steps.flavor.outputs.flavor }}"
+          if [ -n "$FLAVOR" ]; then
+            ${{ inputs.build-command }} flavor:"$FLAVOR"
+          else
+            ${{ inputs.build-command }}
+          fi
+
+      - name: Locate built artifact
+        if: inputs.mode == 'build-and-publish'
+        id: built
+        run: |
+          if [ -n "${{ inputs.artifact-path }}" ] && [ -f "${{ inputs.artifact-path }}" ]; then
+            echo "path=${{ inputs.artifact-path }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          found=$(find . -type f \( -path '*/outputs/bundle/*/*.aab' -o -path '*/outputs/apk/*/*.apk' \) 2>/dev/null | head -n 1 || true)
+          if [ -z "$found" ]; then
+            echo "ERROR: build-and-publish finished but no AAB/APK found; set artifact-path input"
+            exit 1
+          fi
+          echo "path=$found" >> "$GITHUB_OUTPUT"
+
+      - name: Export ARTIFACT_PATH
+        id: final
+        run: |
+          if [ "${{ inputs.mode }}" = "build-and-publish" ]; then
+            AP="${{ steps.built.outputs.path }}"
+          else
+            AP="${{ steps.artifact.outputs.path }}"
+          fi
+          echo "path=$AP" >> "$GITHUB_OUTPUT"
+          echo "ARTIFACT_PATH=$AP" >> "$GITHUB_ENV"
+
+      - name: Distribute to Play Store
+        if: inputs.target == 'play_store' && inputs.distribute-command != ''
+        env:
+          ARTIFACT_PATH: ${{ env.ARTIFACT_PATH }}
+          DEPLOY_ENV: ${{ inputs.environment }}
+        run: ${{ inputs.distribute-command }}
+
+      - name: Upload distribution artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-publish-output
+          path: ${{ steps.final.outputs.path }}
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Cleanup signing files
+        if: always() && inputs.mode == 'build-and-publish' && inputs.setup-signing
+        run: |
+          rm -f android/key.properties
+          rm -f android/app/signing/upload-keystore.jks
+
+      - name: Upload Fastlane logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-publish-logs
+          path: fastlane/report.xml
+          if-no-files-found: ignore
+          retention-days: 7
