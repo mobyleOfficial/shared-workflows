@@ -173,3 +173,24 @@ jobs:
       checks: write
 ```
 
+### Android CI
+
+Opinionated native Android CI reusable workflow: JDK + Gradle setup, optional `google-services.json` from a base64 secret, unit tests, lint, and report artifacts. Emulator UI tests are not enabled in v1 (`run-emulator-tests` fails closed if set true).
+
+**Research notes:** [`docs/research/android-ci.md`](docs/research/android-ci.md)
+
+**Caller example:**
+
+```yaml
+jobs:
+  android-ci:
+    uses: mobyleOfficial/shared-workflows/.github/workflows/android-ci.yml@main
+    with:
+      java-version: '17'
+      write-google-services: true
+      run-unit-tests: true
+      run-lint: true
+    secrets:
+      GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+```
+
