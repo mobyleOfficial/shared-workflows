@@ -69,3 +69,21 @@ jobs:
 ```
 
 Pin `@main` to a tag or commit SHA if you want stricter versioning.
+
+### Determine Flavor
+
+Composite action that maps the GitHub event to a deployment flavor: `push` → `prod`, otherwise the `environment` input (`dev` | `staging` | `prod`).
+
+**Inputs:** `environment` (optional, default `dev`)  
+**Outputs:** `flavor`
+
+**Usage:**
+
+```yaml
+- name: Determine flavor
+  id: flavor
+  uses: mobyleOfficial/shared-workflows/.github/actions/determine-flavor@main
+  with:
+    environment: ${{ inputs.environment }}
+```
+

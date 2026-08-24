@@ -1,0 +1,33 @@
+name: Determine Flavor
+description: Determine deployment flavor based on event type and inputs
+
+inputs:
+  environment:
+    description: Environment from workflow dispatch input (ignored for push events)
+    required: false
+    default: 'dev'
+
+outputs:
+  flavor:
+    description: The determined flavor (dev, staging, or prod)
+    value: ${{ steps.determine.outputs.flavor }}
+
+runs:
+  using: composite
+  steps:
+    - name: Determine flavor
+      id: determine
+      run: |
+        # On push to main: prod, on dispatch: use inputs.environment
+        ENV="${{ github.event_name == 'push' && 'prod' || inputs.environment }}"
+
+        case "$ENV" in
+          prod|staging|dev)
+            echo "flavor=$ENV" >> $GITHUB_OUTPUT
+            ;;
+          *)
+            echo "ERROR: Invalid environment '$ENV'. Must be one of: prod, staging, dev"
+            exit 1
+            ;;
+        esac
+      shell: bash
