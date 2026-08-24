@@ -1,0 +1,39 @@
+# Copy to the consumer repo root as `.actions.yml`
+# Flutter app: flutter-ci + flutter-publish (native publish in distribute-artifact mode).
+
+schema_version: 2
+
+versions:
+  flutter: "3.24.0"
+  ruby: "3.3.0"
+  macos: "14"
+  xcode: "16.2"
+  android_java: "17"
+  android_java_distribution: temurin
+
+testing:
+  flutter:
+    run_linter: true
+    run_ios_tests: true
+    run_android_tests: true
+    coverage_minimum: "80"
+    ios_test_device: "iPhone 16"
+  ios:
+    run_swiftlint: false
+    run_tests: false
+  android:
+    run_unit_tests: false
+    run_lint: false
+
+publishing:
+  flutter:
+    deploy_ios: true
+    deploy_android: true
+  ios:
+    enabled: false
+    mode: distribute-artifact
+    target: testflight
+  android:
+    enabled: false
+    mode: distribute-artifact
+    target: play_store

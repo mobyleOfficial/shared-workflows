@@ -1,0 +1,35 @@
+# Copy to the consumer repo root as `.actions.yml`
+# Native Android app: android-ci + android-publish.
+
+schema_version: 2
+
+versions:
+  android_java: "17"
+  android_java_distribution: temurin
+  ruby: "3.3.0"
+
+testing:
+  flutter:
+    run_linter: false
+    run_ios_tests: false
+    run_android_tests: false
+  ios:
+    run_swiftlint: false
+    run_tests: false
+  android:
+    run_unit_tests: true
+    run_lint: true
+    run_emulator_tests: false
+
+publishing:
+  flutter:
+    deploy_ios: false
+    deploy_android: false
+  ios:
+    enabled: false
+    mode: build-and-publish
+    target: testflight
+  android:
+    enabled: true
+    mode: build-and-publish
+    target: play_store

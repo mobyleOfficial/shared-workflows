@@ -1,0 +1,19 @@
+# Copy to the consumer repo root as `.actions.yml`
+# Legacy flat schema. Prefer actions.v2.*.yml for new repos.
+
+schema_version: 1
+run_ios_tests: true
+run_android_tests: true
+run_linter: true
+run_ai_review: true
+deploy_ios: false
+deploy_android: false
+flutter_version: "3.24.0"
+ruby_version: "3.3.0"
+macos_version: "14"
+android_java_version: "17"
+android_java_distribution: temurin
+test_coverage_minimum: "80"
+ios_test_device: "iPhone 16"
+android_test_emulator: "Pixel_6"
+xcode_version: "16.2"

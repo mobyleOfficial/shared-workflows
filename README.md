@@ -2,7 +2,9 @@
 
 Reusable GitHub Actions workflows for the [mobyleOfficial](https://github.com/mobyleOfficial) organization.
 
-**Setup:** Before adopting workflows in an app repo, configure the required [secrets and environment variables](docs/secrets.md).
+**Setup:** Before adopting workflows in an app repo, configure the required [secrets and environment variables](docs/secrets.md). Copy an [example `.actions.yml`](docs/examples/README.md) to the consumer repo root.
+
+**Versioning:** Pin callers to a release tag (for example `@v1.0.0`) instead of `@main` when you want a frozen version. This repository’s PRs also run [actionlint](.github/workflows/lint.yml) on workflow YAML.
 
 ## Available workflows
 
@@ -32,7 +34,7 @@ jobs:
       pull-requests: write
 ```
 
-Pin `@main` to a tag or commit SHA if you want stricter versioning.
+Pin `@main` to a release tag (for example `@v1.0.0`) or commit SHA if you want stricter versioning.
 
 ### AI Code Review
 
@@ -70,7 +72,7 @@ jobs:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-Pin `@main` to a tag or commit SHA if you want stricter versioning.
+Pin `@main` to a release tag (for example `@v1.0.0`) or commit SHA if you want stricter versioning.
 
 ### Determine Flavor
 
@@ -289,7 +291,7 @@ jobs:
     secrets: inherit
 ```
 
-See [`docs/actions-schema.md`](docs/actions-schema.md) for schema v2 (`testing` / `publishing` sections).
+See [`docs/actions-schema.md`](docs/actions-schema.md) for schema v2 (`testing` / `publishing` sections) and [`docs/examples/`](docs/examples/README.md) for copy-paste `.actions.yml` files.
 
 **Secrets required for publish pipelines:** [`docs/secrets.md`](docs/secrets.md)
 
