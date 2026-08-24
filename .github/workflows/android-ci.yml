@@ -1,0 +1,136 @@
+name: Android CI
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        description: JDK version
+        required: false
+        type: string
+        default: '17'
+      java-distribution:
+        description: JDK distribution
+        required: false
+        type: string
+        default: temurin
+      run-unit-tests:
+        description: Whether to run unit tests
+        required: false
+        type: boolean
+        default: true
+      run-lint:
+        description: Whether to run Android lint
+        required: false
+        type: boolean
+        default: true
+      unit-test-command:
+        description: Gradle unit test command
+        required: false
+        type: string
+        default: ./gradlew testDebugUnitTest --no-daemon --stacktrace
+      lint-command:
+        description: Gradle lint command
+        required: false
+        type: string
+        default: ./gradlew lintDebug --no-daemon --stacktrace
+      write-google-services:
+        description: Decode GOOGLE_SERVICES_JSON secret to disk
+        required: false
+        type: boolean
+        default: false
+      google-services-path:
+        description: Path to write google-services.json
+        required: false
+        type: string
+        default: app/google-services.json
+      run-emulator-tests:
+        description: Reserved — emulator UI tests (default off; not implemented in v1)
+        required: false
+        type: boolean
+        default: false
+      working-directory:
+        description: Working directory containing gradlew
+        required: false
+        type: string
+        default: '.'
+    secrets:
+      GOOGLE_SERVICES_JSON:
+        description: Base64-encoded google-services.json (required when write-google-services is true)
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  android-ci:
+    name: Android unit tests and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: ${{ inputs.java-distribution }}
+          java-version: ${{ inputs.java-version }}
+          cache: gradle
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Write google-services.json
+        if: inputs.write-google-services
+        env:
+          DATA: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$DATA" ]; then
+            echo "ERROR: write-google-services is true but GOOGLE_SERVICES_JSON secret is empty"
+            exit 1
+          fi
+          mkdir -p "$(dirname "${{ inputs.google-services-path }}")"
+          echo "$DATA" | base64 -d > "${{ inputs.google-services-path }}"
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Unit tests
+        if: inputs.run-unit-tests
+        run: ${{ inputs.unit-test-command }}
+
+      - name: Lint
+        if: inputs.run-lint
+        run: ${{ inputs.lint-command }}
+
+      - name: Emulator tests placeholder
+        if: inputs.run-emulator-tests
+        run: |
+          echo "ERROR: run-emulator-tests is not implemented in v1 of android-ci."
+          echo "Keep this input false, or contribute an emulator job in a follow-up."
+          exit 1
+
+      - name: Upload test reports
+        if: always() && inputs.run-unit-tests
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-reports
+          path: |
+            ${{ inputs.working-directory }}/**/build/reports/tests/
+            ${{ inputs.working-directory }}/**/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload lint reports
+        if: always() && inputs.run-lint
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-lint-reports
+          path: |
+            ${{ inputs.working-directory }}/**/build/reports/lint-results*.html
+            ${{ inputs.working-directory }}/**/build/reports/lint-results*.xml
+          if-no-files-found: ignore
+          retention-days: 7
