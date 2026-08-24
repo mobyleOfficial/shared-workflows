@@ -1,0 +1,167 @@
+name: AI Code Review
+
+on:
+  workflow_call:
+    secrets:
+      ANTHROPIC_API_KEY:
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+  id-token: write
+
+jobs:
+  ai-review:
+    name: AI Code Review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Checkout shared prompts
+        uses: actions/checkout@v4
+        with:
+          repository: mobyleOfficial/shared-workflows
+          path: .shared-workflows
+          sparse-checkout: |
+            .github/workflows/ai-review
+          sparse-checkout-cone-mode: false
+
+      - name: Run AI Code Review
+        id: ai-review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Provide a comprehensive code review for PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
+
+            You will coordinate multiple specialized reviewers and produce inline review comments.
+
+            Follow these steps EXACTLY:
+
+            ---
+
+            Step 1 — Understand the context
+            - Read PR title, description, and diff
+            - Identify intent of the change
+            - Do NOT review yet
+
+            ---
+
+            Step 2 — Run independent reviewers
+
+            Run:
+            1. Security Reviewer (use: .shared-workflows/.github/workflows/ai-review/security-reviewer.md)
+            2. Bug Finder (use: .shared-workflows/.github/workflows/ai-review/bug-finder.md)
+            3. Architecture Reviewer (use: .shared-workflows/.github/workflows/ai-review/architecture-reviewer.md)
+
+            Each must:
+            - Work independently
+            - Return STRICT JSON
+            - Focus only on their domain
+
+            ---
+
+            Step 3 — Aggregate findings
+            - Combine all findings into a single list
+            - Tag each with:
+              - category (security | bug | architecture)
+              - source reviewer
+
+            ---
+
+            Step 4 — Validate findings (CRITICAL)
+
+            For EACH finding:
+            - Re-evaluate from scratch
+            - Attempt to DISPROVE it
+            - Classify:
+              - VALID
+              - UNCERTAIN
+              - INVALID
+
+            Assign:
+            - confidence score (0.0 → 1.0)
+
+            Rules:
+            - Keep only VALID or strong UNCERTAIN (confidence ≥ 0.6)
+            - Drop everything else
+            - Prefer missing an issue over false positives
+
+            ---
+
+            Step 5 — Assign risk level
+
+            For each validated finding, compute:
+
+            Risk = severity × likelihood × impact
+
+            Then classify:
+            - CRITICAL → exploitable or breaks core functionality
+            - HIGH → serious issue, likely in real usage
+            - MEDIUM → edge cases or limited scope
+            - LOW → minor impact
+
+            ---
+
+            Step 6 — Deduplicate
+            - Merge overlapping findings
+            - Keep the clearest explanation
+            - Preserve strongest evidence
+
+            ---
+
+            Step 7 — Map to diff lines (IMPORTANT)
+
+            For EACH finding:
+            - Identify exact file path
+            - Identify the closest changed line in the diff
+            - If exact line is unclear, pick the most relevant nearby line
+            - NEVER leave location empty
+
+            ---
+
+            Step 8 — Generate inline PR comments
+
+            Each finding becomes ONE inline comment.
+
+            Output MUST be STRICT JSON:
+
+            {
+              "summary": {
+                "overall_risk": "Low | Medium | High | Critical",
+                "total_findings": number,
+                "posted_comments": number
+              },
+              "comments": [
+                {
+                  "path": "file/path.ext",
+                  "line": 123,
+                  "side": "RIGHT",
+                  "category": "security | bug | architecture",
+                  "risk": "CRITICAL | HIGH | MEDIUM | LOW",
+                  "confidence": 0.0,
+                  "title": "Short issue title",
+                  "body": "Clear explanation of the issue, why it matters, and how to fix it."
+                }
+              ]
+            }
+
+            ---
+
+            Strict rules:
+            - ONLY include validated findings
+            - Confidence MUST reflect real certainty (no fake 0.9 everywhere)
+            - Keep comments concise and actionable
+            - No duplicate comments
+            - If no issues → return empty comments array
