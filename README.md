@@ -87,3 +87,25 @@ Composite action that maps the GitHub event to a deployment flavor: `push` → `
     environment: ${{ inputs.environment }}
 ```
 
+### Load Configuration
+
+Reusable workflow that reads the caller repo’s `.actions.yml` (schema v1) and exposes feature flags / tool versions as job outputs.
+
+See [`docs/actions-schema.md`](docs/actions-schema.md) for the full key list.
+
+**Caller example:**
+
+```yaml
+jobs:
+  config:
+    uses: mobyleOfficial/shared-workflows/.github/workflows/load-config.yml@main
+
+  lint:
+    needs: config
+    if: needs.config.outputs.run_linter == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # use needs.config.outputs.flutter_version, etc.
+```
+
