@@ -13,3 +13,8 @@ Decisions reflected in the composites:
 - Optional Java / Xcode behind inputs.
 - Codegen and CI-env are opt-in commands (defaults match Fastlane lane names common in Mobyle apps).
 - Android signing reads env vars mapped by the caller (composites cannot access `secrets.*` dynamically); caller must delete keystore/`key.properties` after use.
+
+**Release architecture (native-first):**
+
+- Native `android-publish` / `ios-publish` support `distribute-artifact` mode (receive signed AAB/IPA).
+- `flutter-publish` builds Flutter release binaries, uploads artifacts, then calls native publish workflows — no duplicated store-upload logic.

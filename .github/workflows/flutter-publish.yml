@@ -1,0 +1,203 @@
+name: Flutter Publish
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: false
+        type: string
+        default: dev
+      deploy-android:
+        required: false
+        type: boolean
+        default: true
+      deploy-ios:
+        required: false
+        type: boolean
+        default: true
+      flutter-version:
+        required: true
+        type: string
+      ruby-version:
+        required: true
+        type: string
+      macos-version:
+        required: false
+        type: string
+        default: '14'
+      xcode-version:
+        required: false
+        type: string
+        default: '16.2'
+      android-java-version:
+        required: false
+        type: string
+        default: '17'
+      android-java-distribution:
+        required: false
+        type: string
+        default: temurin
+      run-codegen:
+        required: false
+        type: boolean
+        default: true
+      setup-ci-env:
+        required: false
+        type: boolean
+        default: true
+      android-build-command:
+        required: false
+        type: string
+        default: 'bundle exec fastlane android build'
+      ios-build-command:
+        required: false
+        type: string
+        default: 'bundle exec fastlane ios build'
+      android-distribute-command:
+        required: false
+        type: string
+        default: 'bundle exec fastlane android deploy_play dry_run:false'
+      ios-distribute-command:
+        required: false
+        type: string
+        default: 'bundle exec fastlane ios deploy_testflight dry_run:false'
+      working-directory:
+        required: false
+        type: string
+        default: '.'
+
+permissions:
+  contents: read
+
+jobs:
+  build-android:
+    name: Build Android release
+    if: inputs.deploy-android
+    runs-on: ubuntu-latest
+    env:
+      FASTLANE_SKIP_UPDATE_CHECK: 1
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: flavor
+        uses: mobyleOfficial/shared-workflows/.github/actions/determine-flavor@main
+        with:
+          environment: ${{ inputs.environment }}
+
+      - uses: mobyleOfficial/shared-workflows/.github/actions/setup-flutter-environment@main
+        with:
+          flutter-version: ${{ inputs.flutter-version }}
+          ruby-version: ${{ inputs.ruby-version }}
+          setup-java: 'true'
+          java-version: ${{ inputs.android-java-version }}
+          java-distribution: ${{ inputs.android-java-distribution }}
+          run-codegen: ${{ inputs.run-codegen }}
+          setup-ci-env: ${{ inputs.setup-ci-env }}
+
+      - uses: mobyleOfficial/shared-workflows/.github/actions/setup-android-signing@main
+        with:
+          environment: ${{ inputs.environment }}
+
+      - name: Build Android
+        run: ${{ inputs.android-build-command }} flavor:${{ steps.flavor.outputs.flavor }}
+
+      - name: Locate AAB/APK
+        id: artifact
+        run: |
+          found=$(find . -type f \( -path '*/outputs/bundle/*/*.aab' -o -path '*/outputs/apk/*/*release*.apk' \) 2>/dev/null | head -n 1 || true)
+          if [ -z "$found" ]; then
+            echo "ERROR: Flutter Android build produced no AAB/APK"
+            exit 1
+          fi
+          echo "path=$found" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Android release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-android-release
+          path: ${{ steps.artifact.outputs.path }}
+          retention-days: 7
+
+      - name: Cleanup signing files
+        if: always()
+        run: |
+          rm -f android/key.properties
+          rm -f android/app/signing/upload-keystore.jks
+
+  publish-android:
+    name: Publish Android
+    needs: build-android
+    if: inputs.deploy-android
+    uses: mobyleOfficial/shared-workflows/.github/workflows/android-publish.yml@main
+    with:
+      mode: distribute-artifact
+      environment: ${{ inputs.environment }}
+      target: play_store
+      artifact-name: flutter-android-release
+      distribute-command: ${{ inputs.android-distribute-command }}
+      working-directory: ${{ inputs.working-directory }}
+    secrets: inherit
+
+  build-ios:
+    name: Build iOS release
+    if: inputs.deploy-ios
+    runs-on: macos-${{ inputs.macos-version }}
+    env:
+      FASTLANE_SKIP_UPDATE_CHECK: 1
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: flavor
+        uses: mobyleOfficial/shared-workflows/.github/actions/determine-flavor@main
+        with:
+          environment: ${{ inputs.environment }}
+
+      - uses: mobyleOfficial/shared-workflows/.github/actions/setup-flutter-environment@main
+        with:
+          flutter-version: ${{ inputs.flutter-version }}
+          ruby-version: ${{ inputs.ruby-version }}
+          xcode-version: ${{ inputs.xcode-version }}
+          run-codegen: ${{ inputs.run-codegen }}
+          setup-ci-env: ${{ inputs.setup-ci-env }}
+
+      - name: Build iOS
+        run: ${{ inputs.ios-build-command }} flavor:${{ steps.flavor.outputs.flavor }}
+
+      - name: Locate IPA
+        id: artifact
+        run: |
+          found=$(find . -type f -name '*.ipa' 2>/dev/null | head -n 1 || true)
+          if [ -z "$found" ]; then
+            echo "ERROR: Flutter iOS build produced no IPA"
+            exit 1
+          fi
+          echo "path=$found" >> "$GITHUB_OUTPUT"
+
+      - name: Upload iOS release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-ios-release
+          path: ${{ steps.artifact.outputs.path }}
+          retention-days: 7
+
+  publish-ios:
+    name: Publish iOS
+    needs: build-ios
+    if: inputs.deploy-ios
+    uses: mobyleOfficial/shared-workflows/.github/workflows/ios-publish.yml@main
+    with:
+      mode: distribute-artifact
+      environment: ${{ inputs.environment }}
+      target: testflight
+      artifact-name: flutter-ios-release
+      macos-version: ${{ inputs.macos-version }}
+      xcode-version: ${{ inputs.xcode-version }}
+      distribute-command: ${{ inputs.ios-distribute-command }}
+      working-directory: ${{ inputs.working-directory }}
+    secrets: inherit

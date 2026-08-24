@@ -4,53 +4,57 @@ on:
   workflow_call:
     outputs:
       schema_version:
-        description: Actions config schema version
         value: ${{ jobs.config.outputs.schema_version }}
       run_ios_tests:
-        description: Whether to run iOS tests
         value: ${{ jobs.config.outputs.run_ios_tests }}
       run_android_tests:
-        description: Whether to run Android tests
         value: ${{ jobs.config.outputs.run_android_tests }}
       run_linter:
-        description: Whether to run linter
         value: ${{ jobs.config.outputs.run_linter }}
       run_ai_review:
-        description: Whether to run AI code review
         value: ${{ jobs.config.outputs.run_ai_review }}
       deploy_ios:
-        description: Whether to deploy iOS
         value: ${{ jobs.config.outputs.deploy_ios }}
       deploy_android:
-        description: Whether to deploy Android
         value: ${{ jobs.config.outputs.deploy_android }}
       flutter_version:
-        description: Flutter version to use
         value: ${{ jobs.config.outputs.flutter_version }}
       ruby_version:
-        description: Ruby version to use
         value: ${{ jobs.config.outputs.ruby_version }}
       android_java_version:
-        description: Android Java version to use
         value: ${{ jobs.config.outputs.android_java_version }}
       android_java_distribution:
-        description: Android Java distribution to use
         value: ${{ jobs.config.outputs.android_java_distribution }}
       macos_version:
-        description: macOS version to use
         value: ${{ jobs.config.outputs.macos_version }}
       test_coverage_minimum:
-        description: Minimum test coverage threshold
         value: ${{ jobs.config.outputs.test_coverage_minimum }}
       ios_test_device:
-        description: iOS test device name
         value: ${{ jobs.config.outputs.ios_test_device }}
       android_test_emulator:
-        description: Android test emulator name
         value: ${{ jobs.config.outputs.android_test_emulator }}
       xcode_version:
-        description: Xcode version to use
         value: ${{ jobs.config.outputs.xcode_version }}
+      testing_ios_run_swiftlint:
+        value: ${{ jobs.config.outputs.testing_ios_run_swiftlint }}
+      testing_ios_run_tests:
+        value: ${{ jobs.config.outputs.testing_ios_run_tests }}
+      testing_android_run_unit_tests:
+        value: ${{ jobs.config.outputs.testing_android_run_unit_tests }}
+      testing_android_run_lint:
+        value: ${{ jobs.config.outputs.testing_android_run_lint }}
+      publishing_ios_enabled:
+        value: ${{ jobs.config.outputs.publishing_ios_enabled }}
+      publishing_ios_mode:
+        value: ${{ jobs.config.outputs.publishing_ios_mode }}
+      publishing_ios_target:
+        value: ${{ jobs.config.outputs.publishing_ios_target }}
+      publishing_android_enabled:
+        value: ${{ jobs.config.outputs.publishing_android_enabled }}
+      publishing_android_mode:
+        value: ${{ jobs.config.outputs.publishing_android_mode }}
+      publishing_android_target:
+        value: ${{ jobs.config.outputs.publishing_android_target }}
 
 jobs:
   config:
@@ -73,6 +77,16 @@ jobs:
       ios_test_device: ${{ steps.config.outputs.ios_test_device }}
       android_test_emulator: ${{ steps.config.outputs.android_test_emulator }}
       xcode_version: ${{ steps.config.outputs.xcode_version }}
+      testing_ios_run_swiftlint: ${{ steps.config.outputs.testing_ios_run_swiftlint }}
+      testing_ios_run_tests: ${{ steps.config.outputs.testing_ios_run_tests }}
+      testing_android_run_unit_tests: ${{ steps.config.outputs.testing_android_run_unit_tests }}
+      testing_android_run_lint: ${{ steps.config.outputs.testing_android_run_lint }}
+      publishing_ios_enabled: ${{ steps.config.outputs.publishing_ios_enabled }}
+      publishing_ios_mode: ${{ steps.config.outputs.publishing_ios_mode }}
+      publishing_ios_target: ${{ steps.config.outputs.publishing_ios_target }}
+      publishing_android_enabled: ${{ steps.config.outputs.publishing_android_enabled }}
+      publishing_android_mode: ${{ steps.config.outputs.publishing_android_mode }}
+      publishing_android_target: ${{ steps.config.outputs.publishing_android_target }}
 
     steps:
       - name: Checkout code
@@ -84,6 +98,8 @@ jobs:
       - name: Read .actions.yml
         id: config
         run: |
+          set -euo pipefail
+
           if [ ! -f .actions.yml ]; then
             echo "ERROR: .actions.yml file not found"
             exit 1
@@ -95,48 +111,140 @@ jobs:
             echo "See docs/actions-schema.md in mobyleOfficial/shared-workflows"
             exit 1
           fi
-          if [ "$schema_version" != "1" ]; then
-            echo "ERROR: Unsupported schema_version '$schema_version' (supported: 1)"
+
+          yq_bool() {
+            local val
+            val=$(yq "$1" .actions.yml)
+            if [ "$val" = "null" ] || [ -z "$val" ]; then
+              echo "false"
+            else
+              echo "$val"
+            fi
+          }
+
+          yq_str() {
+            local val
+            val=$(yq "$1" .actions.yml)
+            if [ "$val" = "null" ]; then
+              echo ""
+            else
+              echo "$val"
+            fi
+          }
+
+          if [ "$schema_version" = "1" ]; then
+            run_ios_tests=$(yq '.run_ios_tests' .actions.yml)
+            run_android_tests=$(yq '.run_android_tests' .actions.yml)
+            run_linter=$(yq_bool '.run_linter')
+            run_ai_review=$(yq_bool '.run_ai_review')
+            deploy_ios=$(yq_bool '.deploy_ios')
+            deploy_android=$(yq_bool '.deploy_android')
+            flutter_version=$(yq_str '.flutter_version')
+            ruby_version=$(yq_str '.ruby_version')
+            android_java_version=$(yq_str '.android_java_version')
+            android_java_distribution=$(yq_str '.android_java_distribution')
+            macos_version=$(yq_str '.macos_version')
+            test_coverage_minimum=$(yq_str '.test_coverage_minimum')
+            ios_test_device=$(yq_str '.ios_test_device')
+            android_test_emulator=$(yq_str '.android_test_emulator')
+            xcode_version=$(yq_str '.xcode_version')
+
+            testing_ios_run_swiftlint="true"
+            testing_ios_run_tests="true"
+            testing_android_run_unit_tests="true"
+            testing_android_run_lint="true"
+            publishing_ios_enabled="false"
+            publishing_ios_mode="build-and-publish"
+            publishing_ios_target="testflight"
+            publishing_android_enabled="false"
+            publishing_android_mode="build-and-publish"
+            publishing_android_target="play_store"
+
+            if [ "$run_ios_tests" = "null" ] || [ "$run_android_tests" = "null" ] || [ "$flutter_version" = "null" ] || [ "$ruby_version" = "null" ] || [ "$macos_version" = "null" ]; then
+              echo "ERROR: Missing required values in .actions.yml (schema v1)"
+              exit 1
+            fi
+
+          elif [ "$schema_version" = "2" ]; then
+            run_linter=$(yq_bool '.testing.flutter.run_linter')
+            run_ios_tests=$(yq_bool '.testing.flutter.run_ios_tests')
+            run_android_tests=$(yq_bool '.testing.flutter.run_android_tests')
+            run_ai_review=$(yq_bool '.run_ai_review')
+            deploy_ios=$(yq_bool '.publishing.flutter.deploy_ios')
+            deploy_android=$(yq_bool '.publishing.flutter.deploy_android')
+
+            flutter_version=$(yq_str '.versions.flutter')
+            ruby_version=$(yq_str '.versions.ruby')
+            macos_version=$(yq_str '.versions.macos')
+            xcode_version=$(yq_str '.versions.xcode')
+            android_java_version=$(yq_str '.versions.android_java')
+            android_java_distribution=$(yq_str '.versions.android_java_distribution')
+            test_coverage_minimum=$(yq_str '.testing.flutter.coverage_minimum')
+            ios_test_device=$(yq_str '.testing.flutter.ios_test_device')
+            android_test_emulator=$(yq_str '.testing.android.run_emulator_tests')
+
+            testing_ios_run_swiftlint=$(yq_bool '.testing.ios.run_swiftlint')
+            testing_ios_run_tests=$(yq_bool '.testing.ios.run_tests')
+            testing_android_run_unit_tests=$(yq_bool '.testing.android.run_unit_tests')
+            testing_android_run_lint=$(yq_bool '.testing.android.run_lint')
+
+            publishing_ios_enabled=$(yq_bool '.publishing.ios.enabled')
+            publishing_ios_mode=$(yq_str '.publishing.ios.mode')
+            publishing_ios_target=$(yq_str '.publishing.ios.target')
+            publishing_android_enabled=$(yq_bool '.publishing.android.enabled')
+            publishing_android_mode=$(yq_str '.publishing.android.mode')
+            publishing_android_target=$(yq_str '.publishing.android.target')
+
+            [ -z "$publishing_ios_mode" ] && publishing_ios_mode="build-and-publish"
+            [ -z "$publishing_ios_target" ] && publishing_ios_target="testflight"
+            [ -z "$publishing_android_mode" ] && publishing_android_mode="build-and-publish"
+            [ -z "$publishing_android_target" ] && publishing_android_target="play_store"
+            [ -z "$android_java_version" ] && android_java_version="17"
+            [ -z "$android_java_distribution" ] && android_java_distribution="temurin"
+
+            needs_flutter=false
+            if [ "$run_linter" = "true" ] || [ "$run_ios_tests" = "true" ] || [ "$run_android_tests" = "true" ] || [ "$deploy_ios" = "true" ] || [ "$deploy_android" = "true" ]; then
+              needs_flutter=true
+            fi
+            if [ "$needs_flutter" = "true" ] && { [ -z "$flutter_version" ] || [ -z "$ruby_version" ] || [ -z "$macos_version" ]; }; then
+              echo "ERROR: schema v2 requires versions.flutter, versions.ruby, versions.macos when Flutter testing/publishing is enabled"
+              exit 1
+            fi
+
+          else
+            echo "ERROR: Unsupported schema_version '$schema_version' (supported: 1, 2)"
             exit 1
           fi
 
-          run_ios_tests=$(yq '.run_ios_tests' .actions.yml)
-          run_android_tests=$(yq '.run_android_tests' .actions.yml)
-          run_linter=$(yq '.run_linter' .actions.yml)
-          run_ai_review=$(yq '.run_ai_review' .actions.yml)
-          deploy_ios=$(yq '.deploy_ios' .actions.yml)
-          deploy_android=$(yq '.deploy_android' .actions.yml)
-          flutter_version=$(yq '.flutter_version' .actions.yml)
-          ruby_version=$(yq '.ruby_version' .actions.yml)
-          android_java_version=$(yq '.android_java_version' .actions.yml)
-          android_java_distribution=$(yq '.android_java_distribution' .actions.yml)
-          macos_version=$(yq '.macos_version' .actions.yml)
-          test_coverage_minimum=$(yq '.test_coverage_minimum' .actions.yml)
-          ios_test_device=$(yq '.ios_test_device' .actions.yml)
-          android_test_emulator=$(yq '.android_test_emulator' .actions.yml)
-          xcode_version=$(yq '.xcode_version' .actions.yml)
+          write_outputs() {
+            echo "schema_version=$schema_version" >> "$GITHUB_OUTPUT"
+            echo "run_ios_tests=$run_ios_tests" >> "$GITHUB_OUTPUT"
+            echo "run_android_tests=$run_android_tests" >> "$GITHUB_OUTPUT"
+            echo "run_linter=$run_linter" >> "$GITHUB_OUTPUT"
+            echo "run_ai_review=$run_ai_review" >> "$GITHUB_OUTPUT"
+            echo "deploy_ios=$deploy_ios" >> "$GITHUB_OUTPUT"
+            echo "deploy_android=$deploy_android" >> "$GITHUB_OUTPUT"
+            echo "flutter_version=$flutter_version" >> "$GITHUB_OUTPUT"
+            echo "ruby_version=$ruby_version" >> "$GITHUB_OUTPUT"
+            echo "android_java_version=$android_java_version" >> "$GITHUB_OUTPUT"
+            echo "android_java_distribution=$android_java_distribution" >> "$GITHUB_OUTPUT"
+            echo "macos_version=$macos_version" >> "$GITHUB_OUTPUT"
+            echo "test_coverage_minimum=$test_coverage_minimum" >> "$GITHUB_OUTPUT"
+            echo "ios_test_device=$ios_test_device" >> "$GITHUB_OUTPUT"
+            echo "android_test_emulator=$android_test_emulator" >> "$GITHUB_OUTPUT"
+            echo "xcode_version=$xcode_version" >> "$GITHUB_OUTPUT"
+            echo "testing_ios_run_swiftlint=$testing_ios_run_swiftlint" >> "$GITHUB_OUTPUT"
+            echo "testing_ios_run_tests=$testing_ios_run_tests" >> "$GITHUB_OUTPUT"
+            echo "testing_android_run_unit_tests=$testing_android_run_unit_tests" >> "$GITHUB_OUTPUT"
+            echo "testing_android_run_lint=$testing_android_run_lint" >> "$GITHUB_OUTPUT"
+            echo "publishing_ios_enabled=$publishing_ios_enabled" >> "$GITHUB_OUTPUT"
+            echo "publishing_ios_mode=$publishing_ios_mode" >> "$GITHUB_OUTPUT"
+            echo "publishing_ios_target=$publishing_ios_target" >> "$GITHUB_OUTPUT"
+            echo "publishing_android_enabled=$publishing_android_enabled" >> "$GITHUB_OUTPUT"
+            echo "publishing_android_mode=$publishing_android_mode" >> "$GITHUB_OUTPUT"
+            echo "publishing_android_target=$publishing_android_target" >> "$GITHUB_OUTPUT"
+          }
 
-          if [ "$run_ios_tests" = "null" ] || [ "$run_android_tests" = "null" ] || [ "$flutter_version" = "null" ] || [ "$ruby_version" = "null" ] || [ "$macos_version" = "null" ]; then
-            echo "ERROR: Missing required values in .actions.yml"
-            echo "Required: run_ios_tests, run_android_tests, flutter_version, ruby_version, macos_version"
-            exit 1
-          fi
+          write_outputs
 
-          echo "schema_version=$schema_version" >> $GITHUB_OUTPUT
-          echo "run_ios_tests=$run_ios_tests" >> $GITHUB_OUTPUT
-          echo "run_android_tests=$run_android_tests" >> $GITHUB_OUTPUT
-          echo "run_linter=$run_linter" >> $GITHUB_OUTPUT
-          echo "run_ai_review=$run_ai_review" >> $GITHUB_OUTPUT
-          echo "deploy_ios=$deploy_ios" >> $GITHUB_OUTPUT
-          echo "deploy_android=$deploy_android" >> $GITHUB_OUTPUT
-          echo "flutter_version=$flutter_version" >> $GITHUB_OUTPUT
-          echo "ruby_version=$ruby_version" >> $GITHUB_OUTPUT
-          echo "android_java_version=$android_java_version" >> $GITHUB_OUTPUT
-          echo "android_java_distribution=$android_java_distribution" >> $GITHUB_OUTPUT
-          echo "macos_version=$macos_version" >> $GITHUB_OUTPUT
-          echo "test_coverage_minimum=$test_coverage_minimum" >> $GITHUB_OUTPUT
-          echo "ios_test_device=$ios_test_device" >> $GITHUB_OUTPUT
-          echo "android_test_emulator=$android_test_emulator" >> $GITHUB_OUTPUT
-          echo "xcode_version=$xcode_version" >> $GITHUB_OUTPUT
-
-          echo "Configuration loaded: ios=$run_ios_tests, android=$run_android_tests, linter=$run_linter, deploy_ios=$deploy_ios, deploy_android=$deploy_android, coverage_min=$test_coverage_minimum, xcode=$xcode_version"
+          echo "Configuration loaded (schema=$schema_version)"

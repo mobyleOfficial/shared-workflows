@@ -1,0 +1,228 @@
+name: iOS Publish
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: build-and-publish or distribute-artifact
+        required: false
+        type: string
+        default: build-and-publish
+      environment:
+        description: Deployment environment (dev, staging, prod)
+        required: false
+        type: string
+        default: dev
+      target:
+        description: testflight or github_release
+        required: false
+        type: string
+        default: testflight
+      flavor:
+        description: Build flavor for build-command (optional)
+        required: false
+        type: string
+        default: ''
+      macos-version:
+        required: false
+        type: string
+        default: '14'
+      xcode-version:
+        required: false
+        type: string
+        default: '16.2'
+      ruby-version:
+        required: false
+        type: string
+        default: '3.3'
+      build-command:
+        description: Shell command to produce signed IPA (build-and-publish)
+        required: false
+        type: string
+        default: 'bundle exec fastlane ios build'
+      distribute-command:
+        description: Upload command (TestFlight). ARTIFACT_PATH exported for distribute-artifact.
+        required: false
+        type: string
+        default: 'bundle exec fastlane ios deploy_testflight dry_run:false'
+      artifact-name:
+        description: Artifact to download (distribute-artifact mode)
+        required: false
+        type: string
+        default: ''
+      artifact-path:
+        description: Path to IPA or App.zip
+        required: false
+        type: string
+        default: ''
+      release-tag:
+        description: Git tag for github_release target (defaults to github.ref_name on tag push)
+        required: false
+        type: string
+        default: ''
+      release-name:
+        description: GitHub Release title
+        required: false
+        type: string
+        default: ''
+      github-release-asset-name:
+        description: Asset filename for github_release (e.g. App.zip)
+        required: false
+        type: string
+        default: App.zip
+      working-directory:
+        required: false
+        type: string
+        default: '.'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: iOS publish (${{ inputs.mode }} → ${{ inputs.target }})
+    runs-on: macos-${{ inputs.macos-version }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    env:
+      FASTLANE_SKIP_UPDATE_CHECK: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate mode
+        run: |
+          case "${{ inputs.mode }}" in
+            build-and-publish|distribute-artifact) ;;
+            *) echo "ERROR: Invalid mode '${{ inputs.mode }}'"; exit 1 ;;
+          esac
+          case "${{ inputs.target }}" in
+            testflight|github_release) ;;
+            *) echo "ERROR: Invalid target '${{ inputs.target }}'"; exit 1 ;;
+          esac
+          if [ "${{ inputs.mode }}" = "distribute-artifact" ] && [ -z "${{ inputs.artifact-name }}" ] && [ -z "${{ inputs.artifact-path }}" ]; then
+            echo "ERROR: distribute-artifact requires artifact-name or artifact-path"
+            exit 1
+          fi
+
+      - name: Download pre-built artifact
+        if: inputs.mode == 'distribute-artifact' && inputs.artifact-name != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: downloaded-artifact
+
+      - name: Resolve artifact path
+        id: artifact
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.artifact-path }}" ] && [ -e "${{ inputs.artifact-path }}" ]; then
+            echo "path=${{ inputs.artifact-path }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -d downloaded-artifact ]; then
+            found=$(find downloaded-artifact -type f \( -name '*.ipa' -o -name '*.zip' \) | head -n 1 || true)
+            if [ -n "$found" ]; then
+              echo "path=$found" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          if [ "${{ inputs.mode }}" = "distribute-artifact" ]; then
+            echo "ERROR: Could not resolve IPA/zip from artifact"
+            exit 1
+          fi
+          echo "path=" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Xcode
+        if: inputs.mode == 'build-and-publish'
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ inputs.xcode-version }}
+
+      - name: Setup Ruby
+        if: inputs.mode == 'build-and-publish'
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ inputs.ruby-version }}
+          bundler-cache: true
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Determine flavor
+        if: inputs.mode == 'build-and-publish' && inputs.flavor == ''
+        id: flavor
+        uses: mobyleOfficial/shared-workflows/.github/actions/determine-flavor@main
+        with:
+          environment: ${{ inputs.environment }}
+
+      - name: Build release binary
+        if: inputs.mode == 'build-and-publish'
+        run: |
+          FLAVOR="${{ inputs.flavor != '' && inputs.flavor || steps.flavor.outputs.flavor }}"
+          if [ -n "$FLAVOR" ]; then
+            ${{ inputs.build-command }} flavor:"$FLAVOR"
+          else
+            ${{ inputs.build-command }}
+          fi
+
+      - name: Locate built artifact
+        if: inputs.mode == 'build-and-publish'
+        id: built
+        run: |
+          if [ -n "${{ inputs.artifact-path }}" ] && [ -e "${{ inputs.artifact-path }}" ]; then
+            echo "path=${{ inputs.artifact-path }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          found=$(find . -type f \( -name '*.ipa' -o -name 'App.zip' \) 2>/dev/null | head -n 1 || true)
+          if [ -z "$found" ]; then
+            echo "ERROR: build-and-publish finished but no IPA/zip found; set artifact-path"
+            exit 1
+          fi
+          echo "path=$found" >> "$GITHUB_OUTPUT"
+
+      - name: Export ARTIFACT_PATH
+        id: final
+        run: |
+          if [ "${{ inputs.mode }}" = "build-and-publish" ]; then
+            AP="${{ steps.built.outputs.path }}"
+          else
+            AP="${{ steps.artifact.outputs.path }}"
+          fi
+          echo "path=$AP" >> "$GITHUB_OUTPUT"
+          echo "ARTIFACT_PATH=$AP" >> "$GITHUB_ENV"
+
+      - name: Distribute to TestFlight
+        if: inputs.target == 'testflight' && inputs.distribute-command != ''
+        env:
+          ARTIFACT_PATH: ${{ env.ARTIFACT_PATH }}
+          DEPLOY_ENV: ${{ inputs.environment }}
+        run: ${{ inputs.distribute-command }}
+
+      - name: Create GitHub Release
+        if: inputs.target == 'github_release'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release-tag != '' && inputs.release-tag || github.ref_name }}
+          name: ${{ inputs.release-name != '' && inputs.release-name || format('Release {0}', inputs.release-tag != '' && inputs.release-tag || github.ref_name) }}
+          files: ${{ steps.final.outputs.path }}
+          draft: false
+          prerelease: false
+
+      - name: Upload distribution artifact
+        if: always() && inputs.target != 'github_release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-publish-output
+          path: ${{ steps.final.outputs.path }}
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload Fastlane logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-publish-logs
+          path: fastlane/report.xml
+          if-no-files-found: ignore
+          retention-days: 7

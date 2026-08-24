@@ -2,52 +2,129 @@
 
 Used by the `load-config` reusable workflow.
 
-## `schema_version: 1`
+## Schema version 1 (legacy flat keys)
 
-Required. Currently only `1` is supported.
+Required: `schema_version: 1`, `run_ios_tests`, `run_android_tests`, `flutter_version`, `ruby_version`, `macos_version`.
 
-### Flutter-oriented keys (v1)
+See git history or Muuvie `.actions.yml` for the flat key list. Still supported.
+
+## Schema version 2 (recommended)
+
+Structured **testing** and **publishing** sections plus shared **versions**.
+
+### `versions` (required for Flutter / shared toolchains)
 
 | Key | Required | Description |
 |-----|----------|-------------|
-| `schema_version` | yes | Must be `1` |
-| `run_ios_tests` | yes | Whether to run iOS tests |
-| `run_android_tests` | yes | Whether to run Android tests |
-| `flutter_version` | yes | Flutter SDK version |
-| `ruby_version` | yes | Ruby version (Bundler/Fastlane) |
-| `macos_version` | yes | GitHub-hosted macOS image label (e.g. `14`) |
-| `run_linter` | no | Whether to run the linter job |
-| `run_ai_review` | no | Whether to run AI code review |
-| `deploy_ios` | no | Whether to deploy iOS |
-| `deploy_android` | no | Whether to deploy Android |
-| `android_java_version` | no | JDK version for Android |
-| `android_java_distribution` | no | JDK distribution (e.g. `temurin`) |
-| `test_coverage_minimum` | no | Minimum coverage percent for reporting |
-| `ios_test_device` | no | Simulator/device name for iOS tests |
-| `android_test_emulator` | no | Android emulator name |
-| `xcode_version` | no | Xcode version for macOS jobs |
+| `flutter` | yes* | Flutter SDK version |
+| `ruby` | yes* | Ruby version |
+| `macos` | yes* | GitHub-hosted macOS image label |
+| `xcode` | no | Xcode version |
+| `android_java` | no | JDK version (default `17`) |
+| `android_java_distribution` | no | JDK distribution (default `temurin`) |
+
+\* Required when any Flutter testing or publishing is enabled.
+
+### `testing.flutter`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `run_linter` | `false` | Dart analyze |
+| `run_ios_tests` | `false` | iOS test + simulator build job |
+| `run_android_tests` | `false` | Android test + debug build job |
+| `coverage_minimum` | `""` | LCOV minimum for PR report |
+| `ios_test_device` | `""` | Simulator/device for Fastlane test lane |
+
+### `testing.ios` (native)
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `run_swiftlint` | `true` | SwiftLint on ubuntu |
+| `run_tests` | `true` | macOS test job |
+
+### `testing.android` (native)
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `run_unit_tests` | `true` | Gradle unit tests |
+| `run_lint` | `true` | Android lint |
+| `run_emulator_tests` | `false` | Reserved (not implemented in shared CI v1) |
+
+### `publishing.flutter`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `deploy_ios` | `false` | Enable iOS leg of `flutter-publish` |
+| `deploy_android` | `false` | Enable Android leg of `flutter-publish` |
+
+### `publishing.ios`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enabled` | `false` | Run `ios-publish` |
+| `mode` | `build-and-publish` | `build-and-publish` or `distribute-artifact` |
+| `target` | `testflight` | `testflight` or `github_release` |
+
+### `publishing.android`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `enabled` | `false` | Run `android-publish` |
+| `mode` | `build-and-publish` | `build-and-publish` or `distribute-artifact` |
+| `target` | `play_store` | `play_store` or `artifact-only` |
 
 Unknown keys are ignored.
 
-Native iOS / Android CI-specific keys may be added in later schema revisions when those shared workflows land.
-
-### Example
+### Example (v2)
 
 ```yaml
-schema_version: 1
-run_ios_tests: true
-run_android_tests: true
-run_linter: true
-run_ai_review: true
-deploy_ios: false
-deploy_android: false
-flutter_version: "3.24.0"
-ruby_version: "3.3.0"
-macos_version: "14"
-android_java_version: "17"
-android_java_distribution: temurin
-test_coverage_minimum: "80"
-ios_test_device: "iPhone 16"
-android_test_emulator: "Pixel_6"
-xcode_version: "16.2"
+schema_version: 2
+
+versions:
+  flutter: "3.24.0"
+  ruby: "3.3.0"
+  macos: "14"
+  xcode: "16.2"
+  android_java: "17"
+  android_java_distribution: temurin
+
+testing:
+  flutter:
+    run_linter: true
+    run_ios_tests: true
+    run_android_tests: true
+    coverage_minimum: "80"
+    ios_test_device: "iPhone 16"
+  ios:
+    run_swiftlint: true
+    run_tests: true
+  android:
+    run_unit_tests: true
+    run_lint: true
+
+publishing:
+  flutter:
+    deploy_ios: true
+    deploy_android: true
+  ios:
+    enabled: false
+    mode: distribute-artifact
+    target: testflight
+  android:
+    enabled: false
+    mode: distribute-artifact
+    target: play_store
 ```
+
+## Wiring config to workflows
+
+| Config | Workflow |
+|--------|----------|
+| `testing.flutter.*` | `flutter-ci.yml` |
+| `testing.ios.*` | `ios-ci.yml` |
+| `testing.android.*` | `android-ci.yml` |
+| `publishing.flutter.*` | `flutter-publish.yml` |
+| `publishing.ios.*` | `ios-publish.yml` |
+| `publishing.android.*` | `android-publish.yml` |
+
+Flutter publish builds signed artifacts, then calls native publish workflows in `distribute-artifact` mode.
