@@ -75,46 +75,14 @@ Structured **testing** and **publishing** sections plus shared **versions**.
 
 Unknown keys are ignored.
 
-### Example (v2)
+### Examples
 
-```yaml
-schema_version: 2
+Copy-paste files live in [`docs/examples/`](examples/README.md):
 
-versions:
-  flutter: "3.24.0"
-  ruby: "3.3.0"
-  macos: "14"
-  xcode: "16.2"
-  android_java: "17"
-  android_java_distribution: temurin
-
-testing:
-  flutter:
-    run_linter: true
-    run_ios_tests: true
-    run_android_tests: true
-    coverage_minimum: "80"
-    ios_test_device: "iPhone 16"
-  ios:
-    run_swiftlint: true
-    run_tests: true
-  android:
-    run_unit_tests: true
-    run_lint: true
-
-publishing:
-  flutter:
-    deploy_ios: true
-    deploy_android: true
-  ios:
-    enabled: false
-    mode: distribute-artifact
-    target: testflight
-  android:
-    enabled: false
-    mode: distribute-artifact
-    target: play_store
-```
+- [`actions.v1.yml`](examples/actions.v1.yml) — legacy flat schema
+- [`actions.v2.flutter.yml`](examples/actions.v2.flutter.yml)
+- [`actions.v2.ios.yml`](examples/actions.v2.ios.yml)
+- [`actions.v2.android.yml`](examples/actions.v2.android.yml)
 
 ## Wiring config to workflows
 

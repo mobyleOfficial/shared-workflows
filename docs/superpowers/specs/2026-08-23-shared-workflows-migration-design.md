@@ -1,7 +1,8 @@
 # Shared Workflows Migration Design
 
 Date: 2026-08-23  
-Status: approved (in-chat); pending implementation plan  
+Updated: 2026-08-24  
+Status: implemented in `mobyleOfficial/shared-workflows` (consumer cutovers still later)  
 Source repos audited: Muuvie, AbbayiOS, AbbayAndroid
 
 ## Goal
@@ -15,10 +16,12 @@ Include:
 - Repo-agnostic workflows (e.g. AI review)
 - Reusable Flutter / iOS / Android **building blocks and opinionated CI workflows** that other Mobyle mobile repos can call
 
-Exclude (for this phase):
+Exclude from the original migration phase (still true for consumer repos):
 
-- App-specific publish/deploy pipelines (Muuvie Play/TestFlight, AbbayiOS GitHub Release `.app` zip) unless later generalized
 - Consumer-repo caller cutovers (Muuvie / Abbay*)
+- Replacing Fastlane lane implementations inside apps
+
+Publish workflows were later added **in this repo** as generic reusable units (`ios-publish`, `android-publish`, `flutter-publish`) with `build-and-publish` and `distribute-artifact` modes. App Fastfiles stay in consumer repos.
 
 ## Architecture
 
@@ -28,16 +31,20 @@ Exclude (for this phase):
 .github/
   workflows/     # reusable workflow_call YAMLs (+ optional *-caller.yml examples)
   actions/       # composites only when reused by 2+ workflows
+docs/
+  examples/      # copy-paste .actions.yml templates
+  secrets.md
+  actions-schema.md
 README.md        # one section per shipped unit: purpose, inputs, caller snippet
 ```
 
 ### Conventions
 
-- Reusable workflows use `on: workflow_call` only (no direct app `pull_request`/`push` triggers in shared workflows themselves).
+- Reusable workflows use `on: workflow_call` only (no direct app `pull_request`/`push` triggers in shared workflows themselves), except this repo’s own gates (`check-ai-contribution-caller`, `lint`).
 - Consumer callers stay thin; copy-paste snippets live in README (same pattern as `check-ai-contribution`).
 - Prefer inputs with opinionated defaults; pass secrets via `secrets:` / `secrets: inherit`.
-- Pin guidance: `@main` acceptable early; recommend tag or commit SHA for stricter versioning.
-- One unit per PR; README updated in the same PR.
+- Pin guidance: recommend a release tag (`@v1.0.0`) or commit SHA; `@main` is acceptable for early dogfood.
+- One unit per PR; README updated in the same PR (later enhancement PRs may batch related polish).
 - No Muuvie/Abbay changes in this phase.
 
 ## Already done
@@ -46,7 +53,28 @@ README.md        # one section per shipped unit: purpose, inputs, caller snippet
 |--------|------------------|
 | `check-coauthors.yml` | Superseded by `check-ai-contribution` (also checks PR body + Made/Generated with) |
 
-## PR sequence
+## Implementation status
+
+Shipped on `main` (see GitHub PRs #3–#11 plus polish for examples/lint/v1 tag):
+
+| Unit | Location |
+|------|----------|
+| Check AI contribution | `.github/workflows/check-ai-contribution.yml` |
+| AI Code Review | `.github/workflows/ai-review.yml` + prompts |
+| Determine flavor | `.github/actions/determine-flavor/` |
+| Load config (schema v1 + v2) | `.github/workflows/load-config.yml`, `docs/actions-schema.md` |
+| Flutter setup / Android signing | `.github/actions/setup-flutter-environment/`, `setup-android-signing/` |
+| Native iOS CI | `.github/workflows/ios-ci.yml` |
+| Native Android CI | `.github/workflows/android-ci.yml` |
+| Native iOS/Android publish | `.github/workflows/ios-publish.yml`, `android-publish.yml` |
+| Flutter CI / publish | `.github/workflows/flutter-ci.yml`, `flutter-publish.yml` |
+| Secrets reference | `docs/secrets.md` |
+| Example `.actions.yml` | `docs/examples/` |
+| Workflow lint | `.github/workflows/lint.yml` (actionlint) |
+
+Android emulator UI tests remain reserved (`run-emulator-tests` fails closed).
+
+## Original PR sequence (completed)
 
 ### PR1 — `ai-review`
 
@@ -63,7 +91,7 @@ README.md        # one section per shipped unit: purpose, inputs, caller snippet
 ### PR3 — `load-config`
 
 - Reusable workflow reading `.actions.yml` with `yq`.
-- Document a **versioned schema** (`schema_version: 1`).
+- Document a **versioned schema** (`schema_version: 1`, later **v2** with `testing` / `publishing`).
 - Start with Flutter-oriented keys used today; extend documented keys as iOS/Android PRs land.
 - Missing required keys → fail with a clear error; unknown keys ignored.
 - Outputs mirror the useful Muuvie set (feature flags + tool versions).
@@ -89,6 +117,12 @@ README.md        # one section per shipped unit: purpose, inputs, caller snippet
 - Harden with researched public best practices.
 - Emulator UI tests optional via input (default off or documented separately if costly).
 
+## Later work in this repo (completed)
+
+- Native-first publish workflows with `distribute-artifact` so Flutter can hand off signed AAB/IPA.
+- `flutter-ci` / `flutter-publish` composing native publish.
+- Secrets documentation; example configs; actionlint CI; release tag for caller pinning.
+
 ## Research bar
 
 Before implementing PR4–PR6, research and cite references in the PR description and/or README:
@@ -109,7 +143,7 @@ Before implementing PR4–PR6, research and cite references in the PR descriptio
 
 ## Verification (this repo)
 
-- Structural YAML correctness; optional workflow-lint can be added later.
+- Structural YAML correctness via `actionlint` (`.github/workflows/lint.yml`).
 - No requirement to run real Xcode/Gradle/Flutter app builds against this repo for v1.
 - Optional `*-caller.yml` examples only (not live gates against empty app code).
 
@@ -117,24 +151,23 @@ Before implementing PR4–PR6, research and cite references in the PR descriptio
 
 ### Now (shared-workflows)
 
-Ship PRs 1 → 6 in order; each merges independently.
+Original PRs 1 → 6 plus publish/config/docs polish are on `main`. Callers should pin a `v1` release tag when available.
 
 ### Later (consumers)
 
-1. Add thin callers pointing at `mobyleOfficial/shared-workflows/...@main` (or a tag).
+1. Add thin callers pointing at `mobyleOfficial/shared-workflows/...@v1.0.0` (or `@main` while dogfooding).
 2. Remove duplicated local workflow/action bodies once proven on a PR.
-3. Muuvie: switch `check-coauthors` → `check-ai-contribution` when convenient.
-4. AbbayAndroid: replace incomplete `android-ci.yml` with shared Android CI.
-5. AbbayiOS: adopt shared iOS CI; keep release/publish local until a shared publish workflow exists.
+3. Muuvie: switch `check-coauthors` → `check-ai-contribution` when convenient; adopt `flutter-ci` / `flutter-publish`.
+4. AbbayAndroid: replace incomplete `android-ci.yml` with shared Android CI / publish.
+5. AbbayiOS: adopt shared iOS CI; use `ios-publish` (`testflight` or `github_release`) instead of keeping release YAML local.
 
 ### Org prerequisite
 
-Private reusable workflows require org/repo Actions access (“accessible from repositories in the organization”). Confirm before first consumer cutover.
+This repository is public, so other org repos can call its reusable workflows without extra Actions access settings. If it is ever made private, enable org/repo Actions access (“accessible from repositories in the organization”) before consumer cutover.
 
 ## Explicit non-goals (this phase)
 
 - Updating Muuvie / AbbayiOS / AbbayAndroid callers
-- Shared Play Store / TestFlight / GitHub Release publish workflows
 - Replacing Fastlane lane implementations inside apps
 
 ## Source inventory (reference)
@@ -142,11 +175,11 @@ Private reusable workflows require org/repo Actions access (“accessible from r
 | Source | Item | Disposition |
 |--------|------|-------------|
 | Muuvie | `check-coauthors.yml` | Already superseded here |
-| Muuvie | `ai-review.yml` + prompts | PR1 |
-| Muuvie | `determine-flavor` | PR2 |
-| Muuvie | `load-config.yml` | PR3 |
-| Muuvie | `setup-environment` / signing | PR4 (generalized) |
-| Muuvie | `ci.yml`, publish YAMLs | Out of scope (app-specific); inform Flutter research only |
-| AbbayiOS | `validate-branch.yml` | Informs PR5 |
-| AbbayiOS | `release-app.yml` | Out of scope (publish) |
-| AbbayAndroid | `android-ci.yml` (incomplete) | Informs PR6 |
+| Muuvie | `ai-review.yml` + prompts | Shipped (PR1) |
+| Muuvie | `determine-flavor` | Shipped (PR2) |
+| Muuvie | `load-config.yml` | Shipped (PR3; schema later extended to v2) |
+| Muuvie | `setup-environment` / signing | Shipped (PR4, generalized) |
+| Muuvie | `ci.yml`, publish YAMLs | Informed Flutter CI/publish; generalized in this repo |
+| AbbayiOS | `validate-branch.yml` | Informs `ios-ci` |
+| AbbayiOS | `release-app.yml` | Informs `ios-publish` `github_release` target |
+| AbbayAndroid | `android-ci.yml` (incomplete) | Informs `android-ci` / `android-publish` |
