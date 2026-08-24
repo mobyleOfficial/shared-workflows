@@ -1,0 +1,53 @@
+name: Setup Android Signing
+description: Write Android keystore and key.properties from env vars (caller maps secrets into env)
+
+inputs:
+  environment:
+    description: Deployment environment (dev, staging, prod) — selects ANDROID_*_<ENV> env vars
+    required: true
+  keystore-path:
+    description: Relative path to write the keystore file
+    required: false
+    default: android/app/signing/upload-keystore.jks
+  key-properties-path:
+    description: Relative path to write key.properties
+    required: false
+    default: android/key.properties
+  store-file-value:
+    description: storeFile value written into key.properties
+    required: false
+    default: app/signing/upload-keystore.jks
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Android signing
+      run: |
+        set -euo pipefail
+
+        ENV_UPPER="${{ inputs.environment }}"
+        ENV_UPPER="${ENV_UPPER^^}"
+
+        SECRET_KEYSTORE="ANDROID_KEYSTORE_BASE64_${ENV_UPPER}"
+        SECRET_PASS="ANDROID_KEYSTORE_PASSWORD_${ENV_UPPER}"
+        SECRET_ALIAS="ANDROID_KEY_ALIAS_${ENV_UPPER}"
+        SECRET_KEY_PASS="ANDROID_KEY_PASSWORD_${ENV_UPPER}"
+
+        if [ -z "${!SECRET_KEYSTORE:-}" ] || [ -z "${!SECRET_PASS:-}" ] || [ -z "${!SECRET_ALIAS:-}" ] || [ -z "${!SECRET_KEY_PASS:-}" ]; then
+          echo "ERROR: Missing required env vars for ${{ inputs.environment }} environment"
+          echo "Required: ${SECRET_KEYSTORE}, ${SECRET_PASS}, ${SECRET_ALIAS}, ${SECRET_KEY_PASS}"
+          echo "Map GitHub secrets into the job env before calling this action."
+          exit 1
+        fi
+
+        KEYSTORE_PATH="${{ inputs.keystore-path }}"
+        mkdir -p "$(dirname "$KEYSTORE_PATH")"
+        echo "${!SECRET_KEYSTORE}" | base64 -d > "$KEYSTORE_PATH"
+
+        cat > "${{ inputs.key-properties-path }}" << EOF
+        storeFile=${{ inputs.store-file-value }}
+        storePassword=${!SECRET_PASS}
+        keyAlias=${!SECRET_ALIAS}
+        keyPassword=${!SECRET_KEY_PASS}
+        EOF
+      shell: bash

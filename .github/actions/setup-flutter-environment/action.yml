@@ -1,0 +1,98 @@
+name: Setup Flutter Environment
+description: Setup Flutter, Ruby, optional Java/Xcode, pub get, and optional codegen/CI-env commands
+
+inputs:
+  flutter-version:
+    description: Flutter SDK version to pin (e.g. 3.24.0)
+    required: true
+  flutter-channel:
+    description: Flutter release channel
+    required: false
+    default: stable
+  ruby-version:
+    description: Ruby version for Bundler/Fastlane
+    required: true
+  xcode-version:
+    description: Xcode version (macOS only; skip when empty)
+    required: false
+    default: ''
+  setup-java:
+    description: Whether to set up Java (Android)
+    required: false
+    default: 'false'
+  java-version:
+    description: Java version
+    required: false
+    default: '17'
+  java-distribution:
+    description: Java distribution
+    required: false
+    default: temurin
+  run-codegen:
+    description: Whether to run the codegen command after pub get
+    required: false
+    default: 'false'
+  codegen-command:
+    description: Shell command for code generation
+    required: false
+    default: bundle exec fastlane codegen
+  setup-ci-env:
+    description: Whether to run the CI environment setup command
+    required: false
+    default: 'false'
+  ci-env-command:
+    description: Shell command to prepare app CI env (caller supplies secrets via job env)
+    required: false
+    default: bundle exec fastlane setup_ci_env
+  working-directory:
+    description: Working directory for Ruby/Flutter commands
+    required: false
+    default: '.'
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Java
+      if: inputs.setup-java == 'true'
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ inputs.java-version }}
+        distribution: ${{ inputs.java-distribution }}
+        cache: gradle
+
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ inputs.flutter-version }}
+        channel: ${{ inputs.flutter-channel }}
+        cache: true
+
+    - name: Setup Xcode
+      if: inputs.xcode-version != ''
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: ${{ inputs.xcode-version }}
+
+    - name: Setup Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ inputs.ruby-version }}
+        bundler-cache: true
+        working-directory: ${{ inputs.working-directory }}
+
+    - name: Install dependencies
+      working-directory: ${{ inputs.working-directory }}
+      run: flutter pub get
+      shell: bash
+
+    - name: Run code generation
+      if: inputs.run-codegen == 'true'
+      working-directory: ${{ inputs.working-directory }}
+      run: ${{ inputs.codegen-command }}
+      shell: bash
+
+    - name: Setup CI environment
+      if: inputs.setup-ci-env == 'true'
+      working-directory: ${{ inputs.working-directory }}
+      run: ${{ inputs.ci-env-command }}
+      shell: bash
