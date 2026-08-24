@@ -2,6 +2,8 @@
 
 Reusable GitHub Actions workflows for the [mobyleOfficial](https://github.com/mobyleOfficial) organization.
 
+**Setup:** Before adopting workflows in an app repo, configure the required [secrets and environment variables](docs/secrets.md).
+
 ## Available workflows
 
 ### Check AI Contribution
@@ -288,4 +290,6 @@ jobs:
 ```
 
 See [`docs/actions-schema.md`](docs/actions-schema.md) for schema v2 (`testing` / `publishing` sections).
+
+**Secrets required for publish pipelines:** [`docs/secrets.md`](docs/secrets.md)
 
