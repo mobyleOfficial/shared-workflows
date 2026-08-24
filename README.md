@@ -109,3 +109,44 @@ jobs:
       # use needs.config.outputs.flutter_version, etc.
 ```
 
+### Setup Flutter Environment
+
+Composite action that installs Flutter (pinned version + cache), Ruby (Bundler cache), optional Java/Xcode, runs `flutter pub get`, and optionally runs codegen / CI-env shell commands.
+
+No app-specific secrets are hardcoded — pass any needed values via the job `env` when `setup-ci-env` is enabled.
+
+**Research notes:** [`docs/research/flutter-ci.md`](docs/research/flutter-ci.md)
+
+**Usage:**
+
+```yaml
+- uses: mobyleOfficial/shared-workflows/.github/actions/setup-flutter-environment@main
+  with:
+    flutter-version: ${{ needs.config.outputs.flutter_version }}
+    ruby-version: ${{ needs.config.outputs.ruby_version }}
+    setup-java: 'true'
+    java-version: ${{ needs.config.outputs.android_java_version }}
+    run-codegen: 'true'
+    setup-ci-env: 'true'
+  env:
+    # optional vars consumed by your ci-env-command / Fastlane lane
+    BACKEND_URL: ${{ secrets.BACKEND_URL }}
+```
+
+### Setup Android Signing
+
+Writes a keystore and `key.properties` from env vars named `ANDROID_KEYSTORE_BASE64_<ENV>`, `ANDROID_KEYSTORE_PASSWORD_<ENV>`, `ANDROID_KEY_ALIAS_<ENV>`, and `ANDROID_KEY_PASSWORD_<ENV>` (`ENV` = `DEV`/`STAGING`/`PROD`).
+
+Map GitHub secrets into those env vars on the job. Delete the written files in a later `if: always()` step after the build/deploy.
+
+```yaml
+- uses: mobyleOfficial/shared-workflows/.github/actions/setup-android-signing@main
+  with:
+    environment: prod
+  env:
+    ANDROID_KEYSTORE_BASE64_PROD: ${{ secrets.ANDROID_KEYSTORE_BASE64_PROD }}
+    ANDROID_KEYSTORE_PASSWORD_PROD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD_PROD }}
+    ANDROID_KEY_ALIAS_PROD: ${{ secrets.ANDROID_KEY_ALIAS_PROD }}
+    ANDROID_KEY_PASSWORD_PROD: ${{ secrets.ANDROID_KEY_PASSWORD_PROD }}
+```
+
