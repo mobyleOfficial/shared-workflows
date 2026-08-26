@@ -18,7 +18,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check for Co-Authored-By footer
+      - name: Check for AI attribution and commit ownership
         id: check
         run: |
           set +e
@@ -37,12 +37,12 @@ jobs:
             done <<< "$match"
           }
 
-          # Commit messages
-          commits=$(gh api "repos/${{ github.repository }}/pulls/${pr_number}/commits" \
-            --jq '.[].commit.message' 2>/dev/null || echo "")
+          commits_json=$(gh api "repos/${{ github.repository }}/pulls/${pr_number}/commits" 2>/dev/null || echo "[]")
 
           # Matches Co-Authored-By / Made with / Generated with (e.g. "🤖 Generated with Claude Code")
           attribution_re='co-authored-by:|(made|generated)[[:space:]]+(with|by)'
+
+          commits=$(echo "$commits_json" | jq -r '.[].commit.message')
 
           commit_hits=$(echo "$commits" | grep -iE "$attribution_re" || true)
           if [ -n "$commit_hits" ]; then
@@ -58,6 +58,16 @@ jobs:
             append_violation "pr body" "$body_hits"
           fi
 
+          # Commit ownership — AI tools/bots must not be the author or committer of record
+          ai_owner_re='claude|anthropic|chatgpt|gpt-[0-9]|openai|copilot|codex|devin|cursor(\[bot\])?|gemini|bard|jules|aider|sourcegraph|cody|amazon[- ]?q|codeium|tabnine|replit(-agent)?[[:space:]\[]|blackbox[- ]?ai'
+
+          owner_lines=$(echo "$commits_json" | jq -r '.[] | "\(.sha[0:7]) author_login=\(.author.login // "null") author_name=\(.commit.author.name) author_email=\(.commit.author.email) committer_login=\(.committer.login // "null") committer_name=\(.commit.committer.name) committer_email=\(.commit.committer.email)"')
+
+          owner_hits=$(echo "$owner_lines" | grep -iE "$ai_owner_re" || true)
+          if [ -n "$owner_hits" ]; then
+            append_violation "commit ownership" "$owner_hits"
+          fi
+
           if [ "$found" = true ]; then
             echo "found=true" >> "$GITHUB_OUTPUT"
             violations_encoded="${violations//$'\n'/'%0A'}"
@@ -70,7 +80,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Comment on PR if co-authors found
+      - name: Comment on PR if AI attribution or ownership found
         if: failure() && steps.check.outputs.found == 'true'
         uses: actions/github-script@v7
         with:
@@ -88,5 +98,5 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `❌ AI ownership attribution detected\n\nPull requests must not claim AI co-authorship or tool ownership. Found:\n\`\`\`\n${violations}\n\`\`\`\n\nPlease:\n- Amend commits to remove \`Co-Authored-By\` footers and lines like \`Generated with Claude Code\`, or open a new PR with a single author\n- Update the PR description to remove \`Co-Authored-By\` lines and any \`Made with …\` / \`Generated with …\` attribution`
+              body: `❌ AI ownership attribution detected\n\nPull requests must not claim AI co-authorship or tool ownership, and AI tools/bots must not be the author or committer of a commit. Found:\n\`\`\`\n${violations}\n\`\`\`\n\nPlease:\n- Amend commits to remove \`Co-Authored-By\` footers and lines like \`Generated with Claude Code\`, or open a new PR with a single author\n- Amend commits so the author/committer is a human account, not an AI tool or bot\n- Update the PR description to remove \`Co-Authored-By\` lines and any \`Made with …\` / \`Generated with …\` attribution`
             });
